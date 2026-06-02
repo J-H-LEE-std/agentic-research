@@ -44,17 +44,25 @@ class BaseAgent:
             # 로컬 Streamlit 모드
             return channel.ask_direction(question, summary)
 
-        # 서버 모드: ntfy 알림만 전송하고 계속 진행 (non-blocking fallback)
+        # 서버 모드: ntfy 알림 전송 후 SSE 폴링으로 응답 대기
         import asyncio
+        import time
         import httpx
         from shared.models import get_ntfy_config
         cfg = get_ntfy_config()
-        url = f"{cfg['server_url']}/{cfg['topic']}"
+        topic_url = f"{cfg['server_url']}/{cfg['topic']}"
+        timeout = cfg.get("timeout_seconds", 300)
+        default = cfg.get("default_on_timeout", "continue")
         auth = None
         if cfg.get("username") and cfg.get("password"):
             auth = httpx.BasicAuth(cfg["username"], cfg["password"])
 
-        async def _notify():
+        async def _ask() -> tuple[str, str]:
+            full_summary = (
+                f"[방향 확인] {question}\n\n{summary}\n\n"
+                f"응답: 'continue'(계속) / 'stop'(중단) / 'modify: 지시사항'(재시도)\n"
+                f"(미응답 시 {timeout}초 후 자동으로 '{default}' 처리)"
+            )
             headers = {
                 "Title": f"[방향 확인] {question[:50]}",
                 "Priority": "high",
@@ -62,10 +70,45 @@ class BaseAgent:
             }
             async with httpx.AsyncClient(timeout=10, auth=auth) as client:
                 try:
-                    await client.post(url, content=summary.encode("utf-8"), headers=headers)
-                except Exception:
-                    pass
+                    await client.post(topic_url, content=full_summary.encode("utf-8"), headers=headers)
+                    print(f"  → ntfy 알림 전송 완료, 응답 대기 중... ({timeout}초)")
+                except Exception as e:
+                    print(f"  → ntfy 알림 실패 (기본값 '{default}' 적용): {e}")
+                    return default, ""
 
-        asyncio.run(_notify())
-        print(f"  → ntfy 알림 전송 (서버 모드, 자동으로 계속 진행)")
-        return "continue", ""
+            keywords = {
+                "continue": ("continue", ""), "계속": ("continue", ""),
+                "stop": ("stop", ""),       "중단": ("stop", ""),
+            }
+            sse_url = f"{topic_url}/sse"
+            deadline = time.time() + timeout
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(connect=10, read=timeout + 5, write=10, pool=10),
+                    auth=auth,
+                ) as client:
+                    async with client.stream("GET", sse_url) as stream:
+                        async for line in stream.aiter_lines():
+                            if time.time() > deadline:
+                                break
+                            if not line.startswith("data:"):
+                                continue
+                            try:
+                                import json as _json
+                                msg = _json.loads(line[5:].strip()).get("message", "").strip()
+                                msg_lower = msg.lower()
+                                for kw, result in keywords.items():
+                                    if kw in msg_lower:
+                                        return result
+                                if "modify" in msg_lower or "수정" in msg_lower:
+                                    note = msg.split(":", 1)[1].strip() if ":" in msg else msg
+                                    return "modify", note
+                            except Exception:
+                                continue
+            except Exception:
+                pass
+
+            print(f"  → 타임아웃 — 기본값 '{default}' 적용")
+            return default, ""
+
+        return asyncio.run(_ask())

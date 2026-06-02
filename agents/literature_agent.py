@@ -58,7 +58,10 @@ class LiteratureAgent(BaseAgent):
             if decision == "stop":
                 raise RuntimeError("사용자가 문헌 수집 단계에서 파이프라인을 중단했습니다.")
             if decision == "modify" and note_msg:
-                print(f"  → 수정 지시: {note_msg} (현재 수집 결과로 계속 진행)")
+                print(f"  → 수정 지시: {note_msg} — 재검색 실행")
+                papers = asyncio.run(self._fetch_papers_with_fulltext(f"{search_query} {note_msg}"))
+                valid_papers = [p for p in papers if p.get("title") and not p.get("error")]
+                print(f"  → 재검색 결과: {len(valid_papers)}편")
 
         papers_text = json.dumps(papers, ensure_ascii=False, indent=2)
 
