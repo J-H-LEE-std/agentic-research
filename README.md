@@ -39,16 +39,6 @@ ntfy (healthy)
 ```
 
 ### 모델 배치
-
-| 역할 | 기본 모델 |
-|---|---|
-| Orchestrator / Sub-agents | `openai/gpt-oss-120b:free` |
-| Recursive Verifier (반박) | `openai/gpt-oss-20b:free` |
-| 코드 구현 (Stage 3) | `qwen/qwen3-coder:free` |
-| 피어리뷰 — 방법론 엄밀성 | `google/gemma-4-31b-it:free` |
-| 피어리뷰 — 창의성·혁신성 | `qwen/qwen3-next-80b-a3b-instruct:free` |
-| 피어리뷰 — 실용성·영향력 | `meta-llama/llama-3.3-70b-instruct:free` |
-
 모든 모델은 [OpenRouter](https://openrouter.ai)를 통해 단일 API 키로 호출.  
 `config.yaml`의 모델명만 바꾸면 유료 모델로 교체 가능.
 
@@ -500,5 +490,5 @@ docker compose -f docker/docker-compose.yml exec ntfy ntfy user list
 - **실험 코드 샌드박스**: `mcp-executor`는 격리 네트워크에서 실행된다. `outputs/` 디렉토리만 읽기/쓰기 가능하며 외부 네트워크 요청은 차단된다.
 - **단일 워커**: dashboard는 `--workers 1`로 실행된다. 인메모리 상태(실행 중 task, 로그 버퍼)를 여러 워커가 공유할 수 없기 때문이다.
 - **무료 모델 rate limit**: OpenRouter 무료 모델은 처리 속도가 느리거나 일시적으로 막힐 수 있다. 빠른 실행이 필요하면 유료 모델로 교체한다.
-- **Recursive Verifier**: 120b와 20b 서로 다른 크기의 모델을 사용한다. 같은 모델이 자신을 검증하면 의미 없기 때문에 크기를 분리했다.
+- **Recursive Verifier**: 서로 다른 크기의 모델을 사용한다. 같은 모델이 자신을 검증하면 의미 없기 때문에 크기를 분리했다.
 - **피어리뷰**: 3개의 완전히 다른 모델이 독립적으로 평가한다. 종합 판정은 다수결 + 가중치로 결정된다.
