@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Agent Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --text: #e2e8f0;
+    --text-muted: #8892aa;
+    --accent: #6366f1;
+    --accent-hover: #4f52d4;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+  /* Layout */
+  .header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface); }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  .header h1 span { color: var(--accent); }
+  .main { display: grid; grid-template-columns: 300px 1fr; gap: 0; height: calc(100vh - 57px); overflow: hidden; }
+  .sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+  .content { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+
+  /* New task form */
+  .new-task { padding: 16px; border-bottom: 1px solid var(--border); }
+  .new-task h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px; }
+  .new-task textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 13px; resize: vertical; min-height: 72px; font-family: inherit; line-height: 1.5; }
+  .new-task textarea:focus { outline: none; border-color: var(--accent); }
+  .new-task textarea::placeholder { color: var(--text-muted); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: background 0.15s; }
+  .btn-primary { background: var(--accent); color: #fff; width: 100%; justify-content: center; margin-top: 8px; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-danger { background: #7f1d1d; color: #fca5a5; }
+  .btn-danger:hover { background: #991b1b; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--border); }
+
+  /* Queue */
+  .queue-section { flex: 1; overflow-y: auto; }
+  .section-header { padding: 12px 16px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+  .task-item { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 10px; transition: background 0.1s; }
+  .task-item:hover { background: var(--surface2); }
+  .task-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .dot-pending { background: var(--text-muted); }
+  .dot-running { background: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.2); animation: pulse 2s infinite; }
+  .dot-completed { background: var(--green); }
+  .dot-cancelled { background: var(--text-muted); }
+  .dot-failed { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .task-item .info { flex: 1; min-width: 0; }
+  .task-item .topic { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-item .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .task-item .cancel-btn { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+  .task-item:hover .cancel-btn { opacity: 1; }
+
+  /* Running panel */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .panel-title { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-title h2 { font-size: 13px; font-weight: 600; }
+  .panel-body { padding: 16px 18px; }
+
+  /* Stage list */
+  .stages { display: flex; flex-direction: column; gap: 8px; }
+  .stage-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; background: var(--surface2); }
+  .stage-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+  .stage-info { flex: 1; min-width: 0; }
+  .stage-name { font-size: 13px; }
+  .stage-detail { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage-status { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .stage-row.active { border: 1px solid var(--blue); background: rgba(59,130,246,0.08); }
+  .stage-row.done { opacity: 0.7; }
+
+  /* Approval box */
+  .approval-box { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.35); border-radius: 10px; padding: 14px 16px; }
+  .approval-box .approval-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--yellow); margin-bottom: 6px; font-weight: 600; }
+  .approval-box .approval-stage { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .approval-box .approval-summary { font-size: 12px; color: var(--text-muted); line-height: 1.6; max-height: 100px; overflow-y: auto; margin-bottom: 12px; white-space: pre-wrap; }
+  .approval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .approval-note { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 12px; margin-top: 6px; display: none; font-family: inherit; }
+  .approval-note:focus { outline: none; border-color: var(--yellow); }
+  .btn-approve { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .btn-approve:hover { background: rgba(34,197,94,0.25); }
+  .btn-reject { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .btn-reject:hover { background: rgba(239,68,68,0.22); }
+  .btn-modify { background: rgba(234,179,8,0.12); color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+  .btn-modify:hover { background: rgba(234,179,8,0.22); }
+
+  /* Log panel */
+  .log-panel { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 12px; line-height: 1.7; max-height: 220px; overflow-y: auto; padding: 12px 14px; background: #0a0d14; border-radius: 8px; color: #94a3b8; }
+  .log-panel .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-panel .log-line.stage { color: #93c5fd; }
+  .log-panel .log-line.error { color: #fca5a5; }
+
+  /* Completed grid */
+  .completed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .completed-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .completed-card .card-topic { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+  .completed-card .card-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 12px; }
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge-completed { background: rgba(34,197,94,0.12); color: var(--green); }
+  .badge-failed { background: rgba(239,68,68,0.12); color: var(--red); }
+  .badge-cancelled { background: rgba(100,116,139,0.2); color: var(--text-muted); }
+
+  /* Download */
+  .card-actions { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .file-list { margin-top: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .file-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .file-item:last-child { border-bottom: none; }
+  .file-item .file-path { flex: 1; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-item .file-size { color: var(--text-muted); flex-shrink: 0; font-size: 11px; }
+  .file-item a { color: var(--accent); text-decoration: none; flex-shrink: 0; }
+  .file-item a:hover { text-decoration: underline; }
+
+  /* Empty states */
+  .empty { padding: 28px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+  .empty-icon { font-size: 28px; margin-bottom: 8px; }
+
+  /* Separator */
+  .sep { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); display: flex; align-items: center; gap: 10px; }
+  .sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* PoP upload */
+  .pop-attach { margin-top: 8px; }
+  .pop-attach label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .pop-attach label input { display: none; }
+  .pop-badge { font-size: 11px; color: var(--green); background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); border-radius: 4px; padding: 1px 6px; display: none; }
+
+  /* Input tabs */
+  .input-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+  .input-tab { flex: 1; padding: 5px 0; font-size: 11px; font-weight: 500; text-align: center; border-radius: 6px; cursor: pointer; background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); transition: all 0.15s; }
+  .input-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .note-preview { font-size: 11px; color: var(--accent); margin: 4px 0 8px; padding: 4px 8px; background: rgba(99,102,241,0.08); border-radius: 5px; border: 1px solid rgba(99,102,241,0.2); }
+  .note-preview strong { color: var(--text); }
+
+  /* Paper upload approval */
+  .paper-upload-box { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.35); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .paper-upload-box .pu-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--blue); margin-bottom: 6px; font-weight: 600; }
+  .paper-upload-box .pu-list { margin: 8px 0 10px; padding-left: 0; list-style: none; }
+  .paper-upload-box .pu-list li { font-size: 12px; color: var(--text-muted); padding: 2px 0; }
+  .paper-upload-box .pu-list li a { color: var(--blue); text-decoration: none; }
+  .paper-upload-box .pu-list li a:hover { text-decoration: underline; }
+  input[type="file"].file-input { width: 100%; background: var(--surface2); border: 1px dashed var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; cursor: pointer; margin-bottom: 8px; }
+  input[type="file"].file-input:focus { outline: none; border-color: var(--blue); }
+
+  /* Running topic header */
+  .running-meta { margin-bottom: 14px; }
+  .running-meta .rtopic { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .running-meta .rmeta { font-size: 12px; color: var(--text-muted); }
+  .running-meta .rmeta span { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Research Agent <span>Dashboard</span></h1>
+  <div style="font-size:12px;color:var(--text-muted)" id="statusDot">연결 중...</div>
+</div>
+
+<div class="main">
+  <!-- Sidebar: new task + queue -->
+  <div class="sidebar">
+    <div class="new-task">
+      <h2>새 연구 제출</h2>
+      <div class="input-tabs">
+        <div class="input-tab active" id="tab-simple" onclick="switchTab('simple')">간단 입력</div>
+        <div class="input-tab" id="tab-note" onclick="switchTab('note')">연구 노트</div>
+      </div>
+
+      <!-- 간단 입력 -->
+      <div id="panel-simple">
+        <textarea id="topicInput" placeholder="연구 주제를 입력하세요&#10;(예: Efficient Transformer Attention for Long Sequences)" rows="3"></textarea>
+      </div>
+
+      <!-- 연구 노트 -->
+      <div id="panel-note" style="display:none">
+        <textarea id="noteInput" placeholder="연구 노트 Markdown을 붙여넣거나 직접 작성하세요.
+## 연구 제목
+(연구 주제)
+
+## 연구 배경 및 동기
+...
+
+## 연구 가설
+...
+
+## 관련 키워드
+..." rows="9" oninput="previewNote()"></textarea>
+        <div id="notePreview" style="display:none" class="note-preview"></div>
+      </div>
+
+      <div class="pop-attach">
+        <label title="Publish or Perish에서 내보낸 CSV를 첨부하면 자동 검색 대신 사용됩니다">
+          <input type="file" id="popCsvInput" accept=".csv" onchange="onPopFileChange()">
+          📎 PoP CSV 첨부 (선택)
+        </label>
+        <span class="pop-badge" id="popBadge"></span>
+      </div>
+      <button class="btn btn-primary" id="submitBtn" onclick="submitTask()">+ 연구 추가</button>
+    </div>
+
+    <div class="queue-section">
+      <div class="section-header">대기 중</div>
+      <div id="pendingList"></div>
+
+      <div class="section-header" style="margin-top:4px">완료 / 취소</div>
+      <div id="sidebarDoneList"></div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="content">
+    <!-- Running task -->
+    <div id="runningSection"></div>
+
+    <!-- Completed cards -->
+    <div id="completedSection"></div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let tasks = [];
+let logBuffer = {};
+let approvalState = {};
+let modifyOpen = {};        // taskId -> bool: 수정 입력창 열림 여부
+let modifyText = {};        // taskId -> string: 입력 중인 수정 내용
+let lastApprovalTitle = {}; // taskId -> string: approval 변경 감지용
+let _runningTaskId = null;  // 현재 runningSection에 렌더된 task id
+
+const STAGE_NAMES = [
+  '', // 0 unused
+  'Literature Review',
+  'Algorithm Design',
+  'Implementation & Experiments',
+  'Result Analysis',
+  'Paper Writing',
+  'Peer Review',
+];
+
+const STATUS_ICON = {
+  pending:           '○',
+  in_progress:       '◎',
+  waiting_approval:  '⏸',
+  completed:         '✓',
+  failed:            '✗',
+};
+
+// ── SSE ───────────────────────────────────────────────────────────────────────
+function startSSE() {
+  const es = new EventSource('/api/stream');
+  es.onopen = () => { document.getElementById('statusDot').textContent = '● 연결됨'; };
+  es.onmessage = (e) => {
+    const newTasks = JSON.parse(e.data);
+    newTasks.forEach(t => {
+      if (t.new_logs && t.new_logs.length) {
+        if (!logBuffer[t.id]) logBuffer[t.id] = [];
+        t.new_logs.forEach(l => logBuffer[t.id].push(l.message));
+        if (logBuffer[t.id].length > 300) logBuffer[t.id] = logBuffer[t.id].slice(-300);
+      }
+      if (t.approval_request !== undefined) {
+        const newTitle = t.approval_request ? t.approval_request.title : null;
+        if (lastApprovalTitle[t.id] !== newTitle) {
+          // 승인 요청이 바뀌면 수정 입력 상태 초기화
+          delete modifyOpen[t.id];
+          delete modifyText[t.id];
+          lastApprovalTitle[t.id] = newTitle;
+        }
+        approvalState[t.id] = t.approval_request;
+      }
+    });
+    tasks = newTasks;
+    render();
+  };
+  es.onerror = () => {
+    document.getElementById('statusDot').textContent = '○ 연결 끊김';
+    setTimeout(startSSE, 3000);
+  };
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const pending   = tasks.filter(t => t.status === 'pending');
+  const running   = tasks.find(t => t.status === 'running');
+  const done      = tasks.filter(t => ['completed','failed','cancelled'].includes(t.status));
+
+  renderSidebar(pending, running, done);
+  renderRunning(running);
+  renderCompleted(done);
+}
+
+function renderSidebar(pending, running, done) {
+  const pl = document.getElementById('pendingList');
+  pl.innerHTML = '';
+
+  if (running) {
+    pl.innerHTML += taskItem(running, true);
+  }
+  if (pending.length === 0 && !running) {
+    pl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-icon">⏳</div>대기 중인 연구 없음</div>';
+  } else {
+    pending.forEach(t => { pl.innerHTML += taskItem(t, false); });
+  }
+
+  const dl = document.getElementById('sidebarDoneList');
+  dl.innerHTML = done.length
+    ? done.slice(0, 15).map(t => taskItem(t, false)).join('')
+    : '<div class="empty" style="padding:12px;font-size:12px">없음</div>';
+}
+
+function taskItem(t, isRunning) {
+  const dotClass = `dot-${t.status}`;
+  const elapsed = t.started_at ? elapsedStr(t.started_at, t.completed_at) : '';
+  const canCancel = t.status === 'pending' || t.status === 'running';
+  const elapsedSpan = elapsed
+    ? ` · <span${isRunning ? ` id="sidebar-elapsed-${t.id}"` : ''}>${elapsed}</span>`
+    : '';
+  return `
+    <div class="task-item">
+      <div class="dot ${dotClass}"></div>
+      <div class="info">
+        <div class="topic" title="${esc(t.topic)}">${esc(t.topic)}</div>
+        <div class="meta">${statusLabel(t.status)}${elapsedSpan}</div>
+      </div>
+      ${canCancel ? `<button class="btn btn-sm btn-ghost cancel-btn" onclick="cancelTask(${t.id})" title="취소">✕</button>` : ''}
+    </div>`;
+}
+
+function _isInteractingWith(el) {
+  const sel = window.getSelection();
+  if (sel && sel.toString().length > 0) return true;
+  const active = document.activeElement;
+  return !!(active && active !== document.body && el.contains(active));
+}
+
+function _updateLogPanel(taskId) {
+  const lp = document.getElementById(`logPanel-${taskId}`);
+  if (!lp) return;
+  const wasAtBottom = lp.scrollTop + lp.clientHeight >= lp.scrollHeight - 10;
+  lp.innerHTML = renderLogs(logBuffer[taskId] || []);
+  if (wasAtBottom) lp.scrollTop = lp.scrollHeight;
+}
+
+function renderRunning(t) {
+  const sec = document.getElementById('runningSection');
+
+  if (!t) {
+    if (_runningTaskId !== null) {
+      _runningTaskId = null;
+      sec.innerHTML = `
+        <div class="panel">
+          <div class="panel-body">
+            <div class="empty"><div class="empty-icon">🔬</div>실행 중인 연구가 없습니다.<br>왼쪽에서 주제를 입력하고 추가하세요.</div>
+          </div>
+        </div>`;
+    }
+    return;
+  }
+
+  const approvalReq = approvalState[t.id];
+
+  // 텍스트 드래그 중이거나 입력 포커스 중이면 innerHTML 교체를 건너뜀
+  if (_runningTaskId === t.id && _isInteractingWith(sec)) {
+    const stagesEl = sec.querySelector('.stages');
+    if (stagesEl) stagesEl.innerHTML = buildStages(t.stages || []);
+    _updateLogPanel(t.id);
+    return;
+  }
+
+  _runningTaskId = t.id;
+  const stages = buildStages(t.stages || []);
+
+  sec.innerHTML = `
+    <div class="panel">
+      <div class="panel-title">
+        <h2>실행 중</h2>
+        <button class="btn btn-sm btn-danger" onclick="cancelTask(${t.id})">■ 연구 중단</button>
+      </div>
+      <div class="panel-body">
+        <div class="running-meta">
+          <div class="rtopic">${esc(t.topic)}</div>
+          <div class="rmeta">시작: <span>${formatLocalTime(t.started_at)}</span> &nbsp;<span id="running-elapsed" style="color:var(--text-muted)"></span></div>
+        </div>
+        ${approvalReq ? renderApproval(t.id, approvalReq) : ''}
+        <div class="stages">${stages}</div>
+        <div style="margin-top:14px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px">실행 로그</div>
+          <div class="log-panel" id="logPanel-${t.id}"></div>
+        </div>
+      </div>
+    </div>`;
+
+  _updateLogPanel(t.id);
+}
+
+function buildStages(stageLogs) {
+  const byNum = {};
+  stageLogs.forEach(s => { byNum[s.stage_num] = s; });
+
+  return STAGE_NAMES.slice(1).map((name, i) => {
+    const num = i + 1;
+    const s = byNum[num];
+    const status = s ? s.status : 'pending';
+    const detail = s ? s.detail : '';
+    const icon = stageIcon(status);
+    const cls = status === 'in_progress' ? 'active' : status === 'completed' ? 'done' : '';
+    return `
+      <div class="stage-row ${cls}">
+        <div class="stage-icon">${icon}</div>
+        <div class="stage-info">
+          <div class="stage-name">Stage ${num}: ${name}</div>
+          ${detail ? `<div class="stage-detail">${esc(detail.split('\n')[0])}</div>` : ''}
+        </div>
+        <div class="stage-status">${statusLabel(status)}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderApproval(taskId, req) {
+  if (req.type === 'paper_upload') {
+    return renderPaperUpload(taskId, req);
+  }
+
+  const isDirection = req.type === 'direction';
+  const approveLabel = isDirection ? '계속' : '승인';
+  const approveDecision = isDirection ? 'continue' : 'approve';
+  const rejectLabel = isDirection ? '중단' : '거부';
+  const rejectDecision = isDirection ? 'stop' : 'reject';
+  const areaDisplay = modifyOpen[taskId] ? '' : 'display:none';
+  const noteVal = esc(modifyText[taskId] || '');
+
+  return `
+    <div class="approval-box" style="margin-bottom:14px">
+      <div class="approval-title">⏸ ${isDirection ? '방향 확인 필요' : '승인 필요'}</div>
+      <div class="approval-stage">${esc(req.title)}</div>
+      <div class="approval-summary">${esc(req.summary || '')}</div>
+      <div class="approval-actions">
+        <button class="btn btn-sm btn-approve" onclick="respond(${taskId},'${approveDecision}')">✓ ${approveLabel}</button>
+        <button class="btn btn-sm btn-reject" onclick="respond(${taskId},'${rejectDecision}')">✕ ${rejectLabel}</button>
+        <button class="btn btn-sm btn-modify" onclick="toggleModify(${taskId})">✏ 수정 요청</button>
+      </div>
+      <div id="modifyArea-${taskId}" style="${areaDisplay}">
+        <input class="approval-note" id="modifyNote-${taskId}"
+               style="display:block;margin-bottom:6px"
+               placeholder="수정 지시사항을 입력하세요"
+               value="${noteVal}"
+               oninput="modifyText[${taskId}]=this.value"
+               onkeydown="if(event.key==='Enter'&&!event.shiftKey)respond(${taskId},'modify')">
+        <button class="btn btn-sm btn-modify" style="width:100%"
+                onclick="respond(${taskId},'modify')">↩ 수정 요청 전송</button>
+      </div>
+    </div>`;
+}
+
+function renderPaperUpload(taskId, req) {
+  const papers = req.papers || [];
+  const listItems = papers.map(p => {
+    const url = p.url || '';
+    const title = esc(p.title || '(제목 없음)');
+    return url
+      ? `<li>📄 <a href="${esc(url)}" target="_blank" rel="noopener">${title}</a></li>`
+      : `<li>📄 ${title}</li>`;
+  }).join('');
+
+  return `
+    <div class="paper-upload-box">
+      <div class="pu-title">📎 논문 원문 요청 — ${papers.length}편</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">
+        자동으로 원문을 받지 못한 논문입니다. PDF를 다운받아 업로드해 주세요.<br>
+        건너뛰면 초록(abstract)만으로 분석을 계속합니다.
+      </div>
+      <ul class="pu-list">${listItems}</ul>
+      <input type="file" class="file-input" id="paperFiles-${taskId}" accept=".pdf" multiple>
+      <div class="approval-actions">
+        <button class="btn btn-sm btn-approve" onclick="submitPapers(${taskId})">📤 제출</button>
+        <button class="btn btn-sm btn-ghost" onclick="skipPapers(${taskId})">⏭ 건너뛰기</button>
+      </div>
+    </div>`;
+}
+
+function renderLogs(lines) {
+  if (!lines.length) return '<span style="color:var(--text-muted)">로그 대기 중...</span>';
+  return lines.map(l => {
+    const cls = l.startsWith('[Stage') || l.startsWith('[인간') ? 'stage' : l.includes('ERROR') || l.includes('오류') ? 'error' : '';
+    return `<div class="log-line ${cls}">${esc(l)}</div>`;
+  }).join('');
+}
+
+function renderCompleted(done) {
+  const sec = document.getElementById('completedSection');
+  if (!done.length) { sec.innerHTML = ''; return; }
+
+  const cards = done.map(t => {
+    const duration = t.started_at && t.completed_at ? durationStr(t.started_at, t.completed_at) : '-';
+    const dlBtn = t.status === 'completed' ? `
+      <div class="card-actions">
+        <a class="btn btn-sm btn-ghost" href="/api/tasks/${t.id}/archive" download>📦 전체 다운로드</a>
+        <button class="btn btn-sm btn-ghost" onclick="toggleFiles(${t.id}, this)">📁 파일 목록</button>
+      </div>
+      <div id="files-${t.id}" style="display:none"></div>` : '';
+    return `
+      <div class="completed-card">
+        <div class="card-topic">${esc(t.topic)}</div>
+        <div class="card-meta">
+          <span class="badge badge-${t.status}">${statusLabel(t.status)}</span>
+          <span>${duration}</span>
+          <span>${formatLocalTime(t.completed_at)}</span>
+        </div>
+        ${dlBtn}
+      </div>`;
+  }).join('');
+
+  sec.innerHTML = `
+    <div class="sep">완료된 연구</div>
+    <div class="completed-grid">${cards}</div>`;
+}
+
+async function toggleFiles(taskId, btn) {
+  const box = document.getElementById(`files-${taskId}`);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; btn.textContent = '📁 파일 목록'; return; }
+
+  btn.textContent = '⏳ 불러오는 중...';
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/files`);
+    const data = await res.json();
+    if (!data.files.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">파일 없음</div>'; }
+    else {
+      box.innerHTML = `<div class="file-list">${data.files.map(f => `
+        <div class="file-item">
+          <span>${f.icon}</span>
+          <span class="file-path" title="${esc(f.path)}">${esc(f.path)}</span>
+          <span class="file-size">${fmtSize(f.size)}</span>
+          <a href="/api/tasks/${taskId}/files/${encodeURIComponent(f.path)}" download="${esc(f.name)}">↓</a>
+        </div>`).join('')}</div>`;
+    }
+    box.style.display = '';
+    btn.textContent = '📁 파일 목록 닫기';
+  } catch(e) {
+    btn.textContent = '📁 파일 목록';
+  }
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+  return (bytes / 1024 / 1024).toFixed(1) + 'MB';
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+let currentTab = 'simple';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-simple').classList.toggle('active', tab === 'simple');
+  document.getElementById('tab-note').classList.toggle('active', tab === 'note');
+  document.getElementById('panel-simple').style.display = tab === 'simple' ? '' : 'none';
+  document.getElementById('panel-note').style.display = tab === 'note' ? '' : 'none';
+}
+
+function previewNote() {
+  const text = document.getElementById('noteInput').value;
+  const preview = document.getElementById('notePreview');
+  // 간단한 파서: ## 연구 제목 섹션 추출
+  const match = text.match(/##\s+연구\s*제목\s*\n([\s\S]*?)(?=\n##|$)/);
+  if (match) {
+    const title = match[1].trim().replace(/^\([\s\S]*\)$/, '');
+    if (title && title.length > 0) {
+      preview.style.display = 'block';
+      preview.innerHTML = '📌 주제: <strong>' + esc(title) + '</strong>';
+      return;
+    }
+  }
+  preview.style.display = 'none';
+}
+
+function onPopFileChange() {
+  const input = document.getElementById('popCsvInput');
+  const badge = document.getElementById('popBadge');
+  if (input.files && input.files[0]) {
+    badge.textContent = input.files[0].name;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function submitTask() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+
+  let topic = '', note_md = '';
+
+  if (currentTab === 'note') {
+    note_md = document.getElementById('noteInput').value.trim();
+    if (!note_md) { alert('연구 노트를 입력하세요.'); btn.disabled = false; return; }
+  } else {
+    topic = document.getElementById('topicInput').value.trim();
+    if (!topic) { alert('연구 주제를 입력하세요.'); btn.disabled = false; return; }
+  }
+
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({topic, note_md}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      alert('제출 실패: ' + (err?.detail || await res.text()));
+      return;
+    }
+    const {id: taskId} = await res.json();
+
+    // PoP CSV 첨부 파일이 있으면 업로드
+    const popInput = document.getElementById('popCsvInput');
+    if (popInput.files && popInput.files[0]) {
+      const form = new FormData();
+      form.append('file', popInput.files[0]);
+      const popRes = await fetch(`/api/tasks/${taskId}/pop`, {method: 'POST', body: form});
+      if (popRes.ok) {
+        const data = await popRes.json();
+        console.log(`PoP CSV 업로드 완료: ${data.papers_found}편`);
+      } else {
+        alert('PoP CSV 업로드 실패 (작업은 계속 진행됩니다): ' + await popRes.text());
+      }
+    }
+
+    document.getElementById('topicInput').value = '';
+    document.getElementById('noteInput').value = '';
+    document.getElementById('notePreview').style.display = 'none';
+    popInput.value = '';
+    document.getElementById('popBadge').style.display = 'none';
+  } finally { btn.disabled = false; }
+}
+
+async function submitPapers(taskId) {
+  const input = document.getElementById(`paperFiles-${taskId}`);
+  const files = input ? input.files : [];
+  if (!files || files.length === 0) {
+    if (!confirm('업로드한 파일이 없습니다. 건너뛰시겠습니까?')) return;
+    return skipPapers(taskId);
+  }
+
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+
+  const res = await fetch(`/api/tasks/${taskId}/papers`, {method: 'POST', body: form});
+  if (res.ok) {
+    const data = await res.json();
+    approvalState[taskId] = null;
+    _runningTaskId = null;  // 인터랙션 상태 무시하고 강제 전체 렌더
+    render();
+    console.log(`논문 업로드 완료: ${data.matched}편 매칭`);
+  } else {
+    alert('업로드 실패: ' + (await res.text()));
+  }
+}
+
+async function skipPapers(taskId) {
+  const res = await fetch(`/api/tasks/${taskId}/papers`, {method: 'POST', body: new FormData()});
+  if (res.ok) {
+    approvalState[taskId] = null;
+    _runningTaskId = null;  // 강제 전체 렌더
+    render();
+  }
+}
+
+async function cancelTask(id) {
+  if (!confirm('이 연구를 취소하시겠습니까?')) return;
+
+  // 즉시 로컬 상태 업데이트 — SSE 다음 틱 기다리지 않음
+  const task = tasks.find(t => t.id === id);
+  if (task) {
+    task.status = 'cancelled';
+    task.completed_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  }
+  delete approvalState[id];
+  delete modifyOpen[id];
+  delete modifyText[id];
+  _runningTaskId = null;
+  render();
+
+  try {
+    await fetch(`/api/tasks/${id}`, {method: 'DELETE'});
+  } catch (e) {
+    console.error('취소 요청 실패:', e);
+  }
+}
+
+async function respond(taskId, decision) {
+  const noteEl = document.getElementById(`modifyNote-${taskId}`);
+  const note = noteEl ? noteEl.value.trim() : (modifyText[taskId] || '');
+  delete modifyOpen[taskId];
+  delete modifyText[taskId];
+  await fetch(`/api/tasks/${taskId}/respond`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({decision, note}),
+  });
+  approvalState[taskId] = null;
+  _runningTaskId = null;  // 강제 전체 렌더
+  render();
+}
+
+function toggleModify(taskId) {
+  modifyOpen[taskId] = !modifyOpen[taskId];
+  const area = document.getElementById(`modifyArea-${taskId}`);
+  if (area) {
+    area.style.display = modifyOpen[taskId] ? '' : 'none';
+    if (modifyOpen[taskId]) {
+      const input = document.getElementById(`modifyNote-${taskId}`);
+      if (input) input.focus();
+    }
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function statusLabel(s) {
+  const m = {pending:'대기',running:'실행 중',completed:'완료',failed:'실패',cancelled:'취소',in_progress:'진행 중',waiting_approval:'승인 대기'};
+  return m[s] || s;
+}
+
+function stageIcon(s) {
+  const m = {pending:'○',in_progress:'◉',waiting_approval:'⏸',completed:'✓',failed:'✗'};
+  return m[s] || '○';
+}
+
+// 서버 타임스탬프(UTC, 'Z' 있거나 없거나)를 Date 객체로 파싱
+function parseTS(s) {
+  if (!s) return null;
+  if (s.endsWith('Z') || s.includes('+')) return new Date(s);
+  // 구형 포맷 "YYYY-MM-DD HH:MM:SS" — UTC로 간주
+  return new Date(s.replace(' ', 'T') + 'Z');
+}
+
+// 로컬 시간 표시 (시스템 로캘 기준)
+function formatLocalTime(ts) {
+  const d = parseTS(ts);
+  if (!d) return '-';
+  return d.toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false});
+}
+
+function elapsedStr(start, end) {
+  const s = parseTS(start);
+  const e = end ? parseTS(end) : new Date();
+  if (!s) return '';
+  const sec = Math.floor((e - s) / 1000);
+  if (sec < 0) return '0s';
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec/60)}m ${sec%60}s`;
+  return `${Math.floor(sec/3600)}h ${Math.floor((sec%3600)/60)}m`;
+}
+
+function durationStr(start, end) {
+  return elapsedStr(start, end);
+}
+
+// Ctrl+Enter to submit (both inputs)
+document.getElementById('topicInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) submitTask();
+});
+document.getElementById('noteInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) submitTask();
+});
+
+// ── 독립 타이머 (SSE와 무관하게 1초마다 경과 시간만 갱신) ────────────────────────
+function updateTimers() {
+  const running = tasks.find(t => t.status === 'running');
+  if (!running || !running.started_at) return;
+  const elapsed = elapsedStr(running.started_at, null);
+  const main = document.getElementById('running-elapsed');
+  if (main) main.textContent = '(' + elapsed + ')';
+  const sidebar = document.getElementById(`sidebar-elapsed-${running.id}`);
+  if (sidebar) sidebar.textContent = elapsed;
+}
+setInterval(updateTimers, 1000);
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+startSSE();
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# texlive-xetex: XeLaTeX 엔진 (Unicode/한국어 지원)
+# texlive-latex-extra: 논문에 자주 쓰이는 패키지 (amsmath, algorithm, booktabs 등)
+# texlive-fonts-recommended: 기본 폰트
+# texlive-lang-cjk: 한중일 언어 지원
+# texlive-science: IEEE/ACM 논문 스타일
+# fonts-noto-cjk: Noto Sans/Serif CJK (한국어 PDF 렌더링)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    texlive-xetex \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-lang-cjk \
+    texlive-science \
+    fonts-noto-cjk \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir fastapi uvicorn[standard]
+
+COPY latex_service/ /app/
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+    CMD curl -sf http://localhost:9000/health || exit 1
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "9000"]

@@ -1,0 +1,144 @@
+# ── 공유 볼륨 ────────────────────────────────────────────────────────────────
+volumes:
+  ntfy-cache:
+  ntfy-data:
+
+# ── 네트워크 ──────────────────────────────────────────────────────────────────
+networks:
+  default:
+    driver: bridge
+  isolated:          # python_executor 전용: 외부 인터넷 차단
+    driver: bridge
+    internal: true
+
+# ── 공통 빌드 설정 ────────────────────────────────────────────────────────────
+x-app-base: &app-base
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  env_file: ../.env
+  volumes:
+    - ../data:/data
+  restart: unless-stopped
+
+x-mcp-base: &mcp-base
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.mcp
+  env_file: ../.env
+  restart: unless-stopped
+
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  # ── 1. ntfy (푸시 알림 서버) ─────────────────────────────────────────────
+  #    dashboard가 승인을 담당하지만, 모바일 푸시 알림은 ntfy로 유지
+  ntfy:
+    image: binwiederhier/ntfy
+    command: serve
+    environment:
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-http://localhost:8080}
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/user.db
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_BEHIND_PROXY=true
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:80/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── 2. MCP: ntfy 알림 ────────────────────────────────────────────────────
+  mcp-notifier:
+    <<: *mcp-base
+    environment:
+      - NTFY_SERVER_URL=http://ntfy
+      - NTFY_TOPIC=${NTFY_TOPIC:-research-agent}
+    command: ["python", "-m", "mcp_servers.notifier.server"]
+    volumes:
+      - ../data:/data
+    depends_on:
+      ntfy:
+        condition: service_healthy
+
+  # ── 3. MCP: 논문 검색 ────────────────────────────────────────────────────
+  mcp-search:
+    <<: *mcp-base
+    command: ["python", "-m", "mcp_servers.web_search.server"]
+
+  # ── 4. MCP: Python 실험 실행 (네트워크 격리) ─────────────────────────────
+  mcp-executor:
+    <<: *mcp-base
+    environment:
+      - EXECUTOR_OUTPUT_PATH=/data/outputs
+      - EXECUTOR_TIMEOUT=30
+    command: ["python", "-m", "mcp_servers.python_executor.server"]
+    volumes:
+      - ../data:/data
+    networks:
+      - isolated
+
+  # ── 5. LaTeX 컴파일 서비스 ────────────────────────────────────────────────
+  #    xelatex + 한국어(CJK) 지원. 논문 Writing 단계에서 PDF 생성에 사용
+  latex:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.latex
+    environment:
+      - EXECUTOR_OUTPUT_PATH=/data/outputs
+      - LATEX_TIMEOUT=120
+    volumes:
+      - ../data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── 6. Dashboard (메인 진입점) ────────────────────────────────────────────
+  #    http://localhost:8000 → 연구 제출·추적·승인 UI
+  #    승인은 dashboard 대기(무제한); ntfy는 push 알림 전용
+  dashboard:
+    <<: *app-base
+    environment:
+      - EXECUTOR_OUTPUT_PATH=/data/outputs
+      - PROGRESS_PATH=/data/progress.md
+      - DB_PATH=/data/research.db
+      - WORKSPACE_ROOT=/workspace
+      - NTFY_SERVER_URL=http://ntfy
+      - NTFY_TOPIC=${NTFY_TOPIC:-research-agent}
+      # dashboard 모드: 승인은 UI에서 직접 처리하므로 ntfy 타임아웃 미사용
+      # ntfy fallback용으로만 남겨두되 실질적으로 무제한 설정
+      - NTFY_TIMEOUT=86400
+      - LATEX_SERVICE_URL=http://latex:9000
+    volumes:
+      - ../data:/data
+      - ../workspace:/workspace
+    ports:
+      - "8000:8000"
+    depends_on:
+      ntfy:
+        condition: service_healthy
+      mcp-notifier:
+        condition: service_started
+      mcp-search:
+        condition: service_started
+      mcp-executor:
+        condition: service_started
+      latex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
