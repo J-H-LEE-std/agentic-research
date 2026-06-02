@@ -18,6 +18,7 @@ x-app-base: &app-base
     dockerfile: docker/Dockerfile
   env_file: ../.env
   volumes:
+    - ..:/app
     - ../data:/data
   restart: unless-stopped
 
@@ -26,6 +27,8 @@ x-mcp-base: &mcp-base
     context: ..
     dockerfile: docker/Dockerfile.mcp
   env_file: ../.env
+  volumes:
+    - ..:/app
   restart: unless-stopped
 
 # ─────────────────────────────────────────────────────────────────────────────
